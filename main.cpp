@@ -12,9 +12,10 @@ using namespace std;
 Point2f src_vertices[4];
 Point2f dst_vertices[4];
 
-string gFilename = "scans/WhatColor_inPersonDataBlocks_WISciFest2018_Page_01_Image_0001.png";
+string gFilename = "Example.png";
 
 int clicknum=0;
+int targetNum=0;
 
 Mat img;//src image
 Mat wimg; //warp image
@@ -375,7 +376,7 @@ void UpdateWindow()
 {
     Mat boximg = img.clone();
     
-    
+    /*
     if (clicknum > 1)
         line(boximg,src_vertices[0], src_vertices[1], Scalar(0,255,0), 8);
     if (clicknum > 2)
@@ -385,7 +386,14 @@ void UpdateWindow()
     if (clicknum > 3)
         line(boximg,src_vertices[3], src_vertices[0], Scalar(0,255,0), 8);
     
-
+*/
+    line(boximg,src_vertices[0], src_vertices[1], Scalar(0,255,0), 8);
+    line(boximg,src_vertices[1], src_vertices[2], Scalar(0,255,0), 8);
+    line(boximg,src_vertices[2], src_vertices[3], Scalar(0,255,0), 8);
+    line(boximg,src_vertices[3], src_vertices[0], Scalar(0,255,0), 8);
+    
+    circle(boximg, src_vertices[targetNum], 8, Scalar(255,255,0), 8);
+    
     //show the image
     imshow("Photograph", boximg);
 
@@ -403,15 +411,18 @@ void fixWarp()
     if (gDrawGrid)
         DrawGrid();
 
-    //Create a window
-    namedWindow("warp", 1);
     
-    //create sliders?
-    createTrackbar( "Grid Size X","warp", &gridX, 50, on_slider );
-    createTrackbar( "Grid Size Y","warp", &gridY, 50, on_slider );
-   // createButton("Toggle Grid", on_button, NULL, QT_PUSH_BUTTON, 0);
-   // createButton("button2",on_button,NULL,CV_CHECKBOX,0);
-    
+    if (!cvGetWindowHandle("warp"))
+    {
+        //Create a window
+        namedWindow("warp", 1);
+        
+        //create sliders?
+        createTrackbar( "Grid Size X","warp", &gridX, 50, on_slider );
+        createTrackbar( "Grid Size Y","warp", &gridY, 50, on_slider );
+       // createButton("Toggle Grid", on_button, NULL, QT_PUSH_BUTTON, 0);
+       // createButton("button2",on_button,NULL,CV_CHECKBOX,0);
+    }
     //show the image
     imshow("warp", wimg);
     
@@ -442,11 +453,21 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
      //   cout << "Left button of the mouse is clicked - position (" << x << ", " << y << ")" << endl;
         printf("click at %d %d \n", x, y);
         
-        src_vertices[clicknum%4] = Point(x,y);
+        //test if we are clicking close to another point
+        for (int i=0; i<4; i++)
+        {
+            if ((src_vertices[i].x - x)*(src_vertices[i].x - x) + (src_vertices[i].y - y)*(src_vertices[i].y - y) < 100)
+            {
+                targetNum=i;
+            }
+        }
         
-        clicknum++;
-        if (clicknum >= 4)
-            fixWarp();
+        
+        src_vertices[targetNum] = Point(x,y);
+        
+        //clicknum++;
+        //if (clicknum >= 4)
+        fixWarp();
         
         UpdateWindow();
     }
@@ -458,9 +479,14 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
     {
      //   cout << "Middle button of the mouse is clicked - position (" << x << ", " << y << ")" << endl;
     }
-    else if ( event == EVENT_MOUSEMOVE )
+    else if ( event == EVENT_MOUSEMOVE && flags == EVENT_FLAG_LBUTTON)
     {
      //   cout << "Mouse move over the window - position (" << x << ", " << y << ")" << endl;
+        src_vertices[targetNum] = Point(x,y);
+       // if (clicknum >= 4)
+        fixWarp();
+        
+        UpdateWindow();
         
     }
 }
@@ -506,6 +532,11 @@ int main(int argc, char* argv[])
     dst_vertices[2] = Point(wimg.cols, wimg.rows);
     dst_vertices[3] = Point(0, wimg.rows);
     
+    src_vertices[0] = Point(img.cols*.25, img.rows*.25);
+    src_vertices[1] = Point(img.cols*.75, img.rows*.25);
+    src_vertices[2] = Point(img.cols*.75, img.rows*.5);
+    src_vertices[3] = Point(img.cols*.25, img.rows*.5);
+    
     
     //Create a window
     namedWindow("Photograph", CV_WINDOW_AUTOSIZE);
@@ -516,21 +547,23 @@ int main(int argc, char* argv[])
     //show the image
     //imshow("My Window", img);
     UpdateWindow();
+    fixWarp();
     
     // Wait until user press some key
     int key = waitKey(0);
     
-    int targetNum=0;
+    
     
     while (key != 27)
     {
         
         key = waitKey(0);
         
-        if (key >= '0' && key <= '9')
+        if (key >= '1' && key <= '4')
         {
-            targetNum = key -'0';
+            targetNum = key -'1';
             clicknum = targetNum;
+            UpdateWindow();
             printf("%d\n", targetNum);
         }
         
