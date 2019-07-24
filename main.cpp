@@ -1,36 +1,49 @@
-// Shipwreck.cpp : Defines the entry point for the console application.
-//
+
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/video/tracking.hpp>
+
 
 using namespace cv;
 using namespace std;
 
-Point2f src_vertices[4];
-Point2f dst_vertices[4];
-
+//input image
 string gFilename = "Example.png";
 
-int clicknum=0;
-int targetNum=0;
-
+//the images we will be using
 Mat img;//src image
 Mat wimg; //warp image
 Mat simg; //simple image
 
-int gridX=13, gridY=21;
-bool gDrawGrid=false;
+//options for viewing where the legos are
+int gGridX=13, gGridY=21;
+bool gDrawGrid=true;
+
+//number of lego colors
+int gLegoColorCount = 12;
+
+//create images for each lego color
 bool gMakeKey = true;
 
+//setting up the windows
 float gScale = .5;
+int gWinWidth=800;
+int gWinPad=20;
 
-int clusterCount = 12;
+//config file name
+char *gConfigFilename = "config.txt";
 
+//slider callback
 void on_slider( int, void* );
-void on_button( int, void* );
+
+//to determine which corner we will move
+int targetNum=0;
+
+//the corners 
+Point2f src_vertices[4];
+Point2f dst_vertices[4];
+
 
 struct Key
 {
@@ -76,7 +89,52 @@ void loadKeys()
         }
     }
     
-    
+}
+
+void LoadConfig(string filename)
+{
+	FILE *f = fopen(filename.c_str(), "r");
+	if (!f)
+		return;
+
+	fscanf(f, "gGridX: %d\n", &gGridX);
+	fscanf(f, "gGridY: %d\n", &gGridY);
+	fscanf(f, "gDrawGrid: %d\n", &gDrawGrid);
+	fscanf(f, "gMakeKey: %d\n", &gMakeKey);
+	fscanf(f, "gWinWidth: %d\n", &gWinWidth);
+	fscanf(f, "gLegoColorCount: %d\n", &gLegoColorCount);
+	int tmp;
+	float tx, ty;
+	for (int i=0; i <4; i++)
+	{
+		printf("src_vertices[%d]: %f, %f\n", i, src_vertices[i].x, src_vertices[i].y);
+		if (fscanf(f, "src_vertices[%d]: %f, %f\n", &tmp, &tx, &ty) == 3)
+		{
+			src_vertices[i].x=tx;
+			src_vertices[i].y=ty;
+		}
+		printf("src_vertices[%d]: %f, %f\n", i, src_vertices[i].x, src_vertices[i].y);
+	}
+
+}
+
+void SaveConfig(string filename)
+{
+	FILE *f = fopen(filename.c_str(), "w");
+	if (!f)
+		return;
+
+	fprintf(f, "gGridX: %d\n", gGridX);
+	fprintf(f, "gGridY: %d\n", gGridY);
+	fprintf(f, "gDrawGrid: %d\n", gDrawGrid);
+	fprintf(f, "gMakeKey: %d\n", gMakeKey);
+	fprintf(f, "gWinWidth: %d\n", gWinWidth);
+	fprintf(f, "gLegoColorCount: %d\n", gLegoColorCount);
+	for (int i=0; i <4; i++)
+	{
+		fprintf(f, "src_vertices[%d]: %f, %f\n", i, src_vertices[i].x, src_vertices[i].y);
+	}
+	
 }
 
 string getBestColor(Vec3b v)
@@ -106,8 +164,8 @@ vector<Vec3b> getGridColors(Mat src)
 {
     vector<Vec3b> colors;
     
-    int w = src.cols / gridX;
-    int h = src.rows / gridY;
+    int w = src.cols / gGridX;
+    int h = src.rows / gGridY;
     
     for( int y = 0; y < src.rows; y+=h )
     for( int x = 0; x < src.cols; x+=w )
@@ -129,8 +187,8 @@ vector<Vec3b> getGridColors(Mat src)
 cv::Scalar getColorFromGrid(int x, int y, int window=5)
 {
     Mat src = wimg;
-    int w = src.cols / gridX;
-    int h = src.rows / gridY;
+    int w = src.cols / gGridX;
+    int h = src.rows / gGridY;
     
     int i = h*y + .5*h;
     int j = w*x + .5*w;
@@ -155,11 +213,11 @@ cv::Scalar getColorFromGrid(int x, int y, int window=5)
 Mat MakeSimpleImage( int w=20, int h = 20)
 {
 
-    Mat timg = Mat(gridY*h, gridX *w, CV_8UC3);
+    Mat timg = Mat(gGridY*h, gGridX *w, CV_8UC3);
     
     
-    for (int x=0; x < gridX; x++)
-     for (int y=0; y < gridY; y++)
+    for (int x=0; x < gGridX; x++)
+     for (int y=0; y < gGridY; y++)
     {
         cv::Rect rect(x*w, y*h, w, h);
         
@@ -172,10 +230,10 @@ Mat MakeSimpleImage( int w=20, int h = 20)
 void DrawGrid()
 {
     // Draw a line
-    for (int i=0; i < wimg.cols; i+= (wimg.cols / gridX))
+    for (int i=0; i < wimg.cols; i+= (wimg.cols / gGridX))
         line( wimg, Point( i, 0 ), Point( i, wimg.rows), Scalar( 255, 255, 255 ),  2, 8 );
     
-    for (int j=0; j < wimg.rows; j+= (wimg.rows / gridY))
+    for (int j=0; j < wimg.rows; j+= (wimg.rows / gGridY))
         line( wimg, Point( 0, j ), Point( wimg.cols, j), Scalar( 255, 255, 255  ),  2, 8 );
     
     //show the image
@@ -265,15 +323,15 @@ void WriteCSV()
     Mat labels;
     int attempts = 20;
     Mat centers;
-    kmeans(samples, clusterCount, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers );
+    kmeans(samples, gLegoColorCount, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers );
     
     if (gMakeKey)
     {
-        Mat kimg(clusterCount, 1, CV_8UC3);
+        Mat kimg(gLegoColorCount, 1, CV_8UC3);
         
         
         FILE *fk = fopen("key.txt", "w");
-        for (int i = 0; i < clusterCount; i++)
+        for (int i = 0; i < gLegoColorCount; i++)
         {
              fprintf(fk, "%f, %f, %f,\n",
                      centers.at<float>(i, 0),
@@ -295,18 +353,7 @@ void WriteCSV()
         fclose(fk);
         imwrite("key.png", kimg);
     }
-    
-    FILE *f = fopen ("test.csv", "w");
-    for( int y = 0; y < src.rows; y++ )
-    {
-        for( int x = 0; x < src.cols; x++ )
-        {
-            int cluster_idx = labels.at<int>(y + x*src.rows,0);
-            fprintf(f, "%d,", cluster_idx);
-        }
-        fprintf(f, "\n");
-    }
-    fclose(f);
+   
     
     
     imwrite(gFilename + "-s.png", src);
@@ -327,7 +374,7 @@ Mat runKmeans(Mat src)
     Mat labels;
     int attempts = 20;
     Mat centers;
-    kmeans(samples, clusterCount, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers );
+    kmeans(samples, gLegoColorCount, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers );
     
     
     Mat new_image( src.size(), src.type() );
@@ -375,18 +422,7 @@ void optimizeCorners()
 void UpdateWindow()
 {
     Mat boximg = img.clone();
-    
-    /*
-    if (clicknum > 1)
-        line(boximg,src_vertices[0], src_vertices[1], Scalar(0,255,0), 8);
-    if (clicknum > 2)
-        line(boximg,src_vertices[1], src_vertices[2], Scalar(0,255,0), 8);
-    if (clicknum > 3)
-        line(boximg,src_vertices[2], src_vertices[3], Scalar(0,255,0), 8);
-    if (clicknum > 3)
-        line(boximg,src_vertices[3], src_vertices[0], Scalar(0,255,0), 8);
-    
-*/
+ 
     line(boximg,src_vertices[0], src_vertices[1], Scalar(0,255,0), 8);
     line(boximg,src_vertices[1], src_vertices[2], Scalar(0,255,0), 8);
     line(boximg,src_vertices[2], src_vertices[3], Scalar(0,255,0), 8);
@@ -408,8 +444,7 @@ void fixWarp()
     Mat warpMatrix = getPerspectiveTransform(src_vertices, dst_vertices);
     warpPerspective(img, wimg, warpMatrix, wimg.size(), INTER_LINEAR, BORDER_CONSTANT);
     
-    if (gDrawGrid)
-        DrawGrid();
+
 
     
     if (!cvGetWindowHandle("warp"))
@@ -418,32 +453,27 @@ void fixWarp()
         namedWindow("warp", 1);
         
         //create sliders?
-        createTrackbar( "Grid Size X","warp", &gridX, 50, on_slider );
-        createTrackbar( "Grid Size Y","warp", &gridY, 50, on_slider );
-       // createButton("Toggle Grid", on_button, NULL, QT_PUSH_BUTTON, 0);
-       // createButton("button2",on_button,NULL,CV_CHECKBOX,0);
+        createTrackbar( "Grid Size X","warp", &gGridX, 50, on_slider );
+        createTrackbar( "Grid Size Y","warp", &gGridY, 50, on_slider );
+
+		cvMoveWindow("warp", gWinWidth+gWinPad, gWinPad);
+
     }
+
+	if (gDrawGrid)
+       DrawGrid();
+
     //show the image
     imshow("warp", wimg);
     
 }
                  
-void on_button(int state, void* userdata)
- {
-     
- }
+
 
 void on_slider( int, void* )
 {
     fixWarp();
-    /*
-     alpha = (double) alpha_slider/alpha_slider_max ;
-     beta = ( 1.0 - alpha );
-     
-     addWeighted( src1, alpha, src2, beta, 0.0, dst);
-     
-     imshow( "Linear Blend", dst );
-     */
+   
 }
 
 void CallBackFunc(int event, int x, int y, int flags, void* userdata)
@@ -504,20 +534,16 @@ int main(int argc, char* argv[])
         gFilename = argv[1];
         printf("set filename to %s\n", gFilename.c_str());
     }
-    
 
-    
-    Mat oimg = imread(gFilename);
+	//load our previous config
+	LoadConfig(gConfigFilename);
+
+	Mat oimg = imread(gFilename);
     
     Mat gimg = oimg.clone();
-    /*
-    imwrite(gFilename + "-g.png", gimg);
-    printf("what is going on?\n");
+   
     
-    return 10;
-    */
-    
-    gScale =  800 / float(oimg.cols);
+    gScale =  gWinWidth / float(oimg.cols);
     
     
     Size size(oimg.cols*gScale,oimg.rows*gScale);//the dst image size,e.g.100x100
@@ -525,8 +551,10 @@ int main(int argc, char* argv[])
    
     resize(oimg,img,size);//resize image
     int blocksize=60;
-    wimg = Mat(gridX*blocksize, gridY *blocksize*.7, CV_8UC3);//img.clone();//Mat (200,400, CV_8U);
-    //now make the dst rects
+    wimg = Mat(gGridX*blocksize, gGridY *blocksize*.7, CV_8UC3);//img.clone();//Mat (200,400, CV_8U);
+
+
+	//now make the dst rects
     dst_vertices[0] = Point(0, 0);
     dst_vertices[1] = Point(wimg.cols, 0);
     dst_vertices[2] = Point(wimg.cols, wimg.rows);
@@ -536,6 +564,14 @@ int main(int argc, char* argv[])
     src_vertices[1] = Point(img.cols*.75, img.rows*.25);
     src_vertices[2] = Point(img.cols*.75, img.rows*.5);
     src_vertices[3] = Point(img.cols*.25, img.rows*.5);
+
+
+	//load our previous config
+	LoadConfig(gConfigFilename);
+    
+
+    
+   
     
     
     //Create a window
@@ -545,15 +581,12 @@ int main(int argc, char* argv[])
     setMouseCallback("Photograph", CallBackFunc, NULL);
     
     //show the image
-    //imshow("My Window", img);
     UpdateWindow();
     fixWarp();
     
     // Wait until user press some key
     int key = waitKey(0);
-    
-    
-    
+
     while (key != 27)
     {
         
@@ -562,7 +595,7 @@ int main(int argc, char* argv[])
         if (key >= '1' && key <= '4')
         {
             targetNum = key -'1';
-            clicknum = targetNum;
+			
             UpdateWindow();
             printf("%d\n", targetNum);
         }
@@ -624,5 +657,7 @@ int main(int argc, char* argv[])
         }
     }
     
+	SaveConfig(gConfigFilename);
+
     return 0;
 }
