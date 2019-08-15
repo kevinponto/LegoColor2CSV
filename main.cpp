@@ -29,13 +29,12 @@ bool gMakeKey = true;
 //setting up the windows
 float gScale = .5;
 int gWinWidth=800;
-int gWinPad=20;
+int gWinPad=30;
 
 //config file name
 char *gConfigFilename = "config.txt";
 
-//slider callback
-void on_slider( int, void* );
+
 
 //to determine which corner we will move
 int targetNum=0;
@@ -44,6 +43,11 @@ int targetNum=0;
 Point2f src_vertices[4];
 Point2f dst_vertices[4];
 
+//prototypes
+void on_slider( int, void* );
+void FixWarp();
+void MakeSimpleColors();
+void MakeSimpleMatchedColors();
 
 struct Key
 {
@@ -137,7 +141,30 @@ void SaveConfig(string filename)
 	
 }
 
-string getBestColor(Vec3b v)
+
+Scalar getBestColor(Vec3b v)
+{
+    Scalar color;
+    float distance = -1;
+    
+    for (int i=0; i < keys.size(); i++)
+    {
+        float d = (keys[i].color[0] - v[0])*(keys[i].color[0] - v[0]) +
+                    (keys[i].color[1] - v[1])*(keys[i].color[1] - v[1]) +
+                    (keys[i].color[2] - v[2])*(keys[i].color[2] - v[2]);
+        
+        if (distance < 0 || d < distance)
+        {
+            
+            distance = d;
+            color = keys[i].color;
+        }
+    }
+    
+    return color;
+}
+
+string getBestColorString(Vec3b v)
 {
     string name;
     float distance = -1;
@@ -265,6 +292,43 @@ void WriteColorCloud()
 }
 
 
+Mat CreateMatchedImage(int w=20, int h = 20)
+{
+
+    Mat timg = Mat(gGridY*h, gGridX *w, CV_32FC4);
+
+	loadKeys();
+	Mat src = MakeSimpleImage(1, 1);
+    
+    //lets do key matching
+    {
+        Mat lab_image;
+        cv::cvtColor(src, lab_image, CV_BGR2Lab);
+    
+       
+        for( int y = 0; y < lab_image.rows; y++ )
+        {
+            for( int x = 0; x < lab_image.cols; x++ )
+            {
+                Vec3b v = lab_image.at<Vec3b>(y,x);
+				Scalar s = getBestColor(v);
+				
+
+				cv::Rect rect(x*w, y*h, w, h);
+        
+				cv::rectangle(timg, rect, s, CV_FILLED);
+            }
+           
+        }
+       
+    }
+	Mat rtimg = Mat(gGridY*h, gGridX *w, CV_32FC4);
+	cv::cvtColor(timg, rtimg, cv::COLOR_Lab2BGR);
+
+
+	return rtimg;
+}
+
 void WriteCSV()
 {
     loadKeys();
@@ -279,26 +343,26 @@ void WriteCSV()
         Mat lab_image;
         cv::cvtColor(src, lab_image, CV_BGR2Lab);
     
-        FILE *f = fopen ("colors.csv", "w");
+        FILE *f = fopen ((gFilename + ".csv").c_str(), "w");
         for( int y = 0; y < lab_image.rows; y++ )
         {
             for( int x = 0; x < lab_image.cols; x++ )
             {
                 Vec3b v = lab_image.at<Vec3b>(y,x);
             
-                fprintf(f, "%s,", getBestColor(v).c_str());
+                fprintf(f, "%s,", getBestColorString(v).c_str());
             }
             fprintf(f, "\n");
         }
         fclose(f);
     }
     
-    //lets do key matching
+    //make a transpose version 
     {
         Mat lab_image;
         cv::cvtColor(src, lab_image, CV_BGR2Lab);
         
-        FILE *f = fopen ((gFilename + ".csv").c_str(), "w");
+        FILE *f = fopen ((gFilename + "-t.csv").c_str(), "w");
         
         for( int x = 0; x < lab_image.cols; x++ )
         {
@@ -306,7 +370,7 @@ void WriteCSV()
             {
                 Vec3b v = lab_image.at<Vec3b>(y,x);
                 
-                fprintf(f, "%s,", getBestColor(v).c_str());
+                fprintf(f, "%s,", getBestColorString(v).c_str());
             }
             fprintf(f, "\n");
         }
@@ -419,8 +483,9 @@ void optimizeCorners()
     
 }
 
-void UpdateWindow()
+void UpdateWindows()
 {
+	//update the main window
     Mat boximg = img.clone();
  
     line(boximg,src_vertices[0], src_vertices[1], Scalar(0,255,0), 8);
@@ -433,19 +498,55 @@ void UpdateWindow()
     //show the image
     imshow("Photograph", boximg);
 
+	//update the warp
+	FixWarp();
+
+	//update the simple colors
+	MakeSimpleColors();
+
+	//match colors
+	//TODO: fix this
+	//MakeSimpleMatchedColors();
+
 }
 
-
-
-void fixWarp()
+void MakeSimpleColors()
 {
-   
-    
+	simg = MakeSimpleImage();
+            
+    //Create a window
+	if (!cvGetWindowHandle("SimpleColors"))
+	{
+		namedWindow("SimpleColors", 1);
+		int h = img.cols;
+		cvMoveWindow("SimpleColors", gWinPad+h, gWinPad);
+	}
+            
+    //show the image
+    imshow("SimpleColors", simg);
+}
+
+void MakeSimpleMatchedColors()
+{
+	Mat smimg = CreateMatchedImage();
+            
+    //Create a window
+	if (!cvGetWindowHandle("SimpleMatchedColors"))
+	{
+		namedWindow("SimpleMatchedColors", 1);
+		int h = img.cols;
+		cvMoveWindow("SimpleMatchedColors", gWinPad+h, gWinPad);
+	}
+            
+    //show the image
+    imshow("SimpleMatchedColors", smimg);
+}
+
+void FixWarp()
+{
+      
     Mat warpMatrix = getPerspectiveTransform(src_vertices, dst_vertices);
     warpPerspective(img, wimg, warpMatrix, wimg.size(), INTER_LINEAR, BORDER_CONSTANT);
-    
-
-
     
     if (!cvGetWindowHandle("warp"))
     {
@@ -472,7 +573,7 @@ void fixWarp()
 
 void on_slider( int, void* )
 {
-    fixWarp();
+    FixWarp();
    
 }
 
@@ -480,43 +581,25 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 {
     if  ( event == EVENT_LBUTTONDOWN )
     {
-     //   cout << "Left button of the mouse is clicked - position (" << x << ", " << y << ")" << endl;
         printf("click at %d %d \n", x, y);
         
         //test if we are clicking close to another point
         for (int i=0; i<4; i++)
         {
-            if ((src_vertices[i].x - x)*(src_vertices[i].x - x) + (src_vertices[i].y - y)*(src_vertices[i].y - y) < 100)
+            if ((src_vertices[i].x - x)*(src_vertices[i].x - x) + (src_vertices[i].y - y)*(src_vertices[i].y - y) < 20*20)
             {
                 targetNum=i;
             }
         }
         
-        
         src_vertices[targetNum] = Point(x,y);
-        
-        //clicknum++;
-        //if (clicknum >= 4)
-        fixWarp();
-        
-        UpdateWindow();
-    }
-    else if  ( event == EVENT_RBUTTONDOWN )
-    {
-     //   cout << "Right button of the mouse is clicked - position (" << x << ", " << y << ")" << endl;
-    }
-    else if  ( event == EVENT_MBUTTONDOWN )
-    {
-     //   cout << "Middle button of the mouse is clicked - position (" << x << ", " << y << ")" << endl;
+        UpdateWindows();
     }
     else if ( event == EVENT_MOUSEMOVE && flags == EVENT_FLAG_LBUTTON)
     {
-     //   cout << "Mouse move over the window - position (" << x << ", " << y << ")" << endl;
-        src_vertices[targetNum] = Point(x,y);
-       // if (clicknum >= 4)
-        fixWarp();
-        
-        UpdateWindow();
+      src_vertices[targetNum] = Point(x,y);
+
+        UpdateWindows();
         
     }
 }
@@ -576,13 +659,16 @@ int main(int argc, char* argv[])
     
     //Create a window
     namedWindow("Photograph", CV_WINDOW_AUTOSIZE);
+	
+	//move it to open spot
+	cvMoveWindow("Photograph", gWinPad, gWinPad);
     
     //set the callback function for any mouse event
     setMouseCallback("Photograph", CallBackFunc, NULL);
     
     //show the image
-    UpdateWindow();
-    fixWarp();
+    UpdateWindows();
+   
     
     // Wait until user press some key
     int key = waitKey(0);
@@ -596,7 +682,7 @@ int main(int argc, char* argv[])
         {
             targetNum = key -'1';
 			
-            UpdateWindow();
+            UpdateWindows();
             printf("%d\n", targetNum);
         }
         
@@ -614,7 +700,7 @@ int main(int argc, char* argv[])
         if (key == 'g')
         {
             gDrawGrid = !gDrawGrid;
-            fixWarp();
+            UpdateWindows();
         }
         
         if (key == 'k')
@@ -622,13 +708,7 @@ int main(int argc, char* argv[])
         
         if (key == 'i')
         {
-            simg = MakeSimpleImage();
-            
-            //Create a window
-            namedWindow("s", 1);
-            
-            //show the image
-            imshow("s", simg);
+           MakeSimpleColors();
         }
         
         int x=0, y=0;
@@ -641,15 +721,15 @@ int main(int argc, char* argv[])
         {
             
             src_vertices[targetNum%4] += Point2f(x,y);
-            UpdateWindow();
-            fixWarp();
+            UpdateWindows();
+           
         }
         
         if (key == 'o')
         {
             
             optimizeCorners();
-            fixWarp();
+            UpdateWindows();
         }
          if (key == 'p')
         {
