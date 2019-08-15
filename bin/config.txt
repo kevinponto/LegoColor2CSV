@@ -1,0 +1,10 @@
+gGridX: 13
+gGridY: 21
+gDrawGrid: 1
+gMakeKey: 1
+gWinWidth: 800
+gLegoColorCount: 12
+src_vertices[0]: 32.000000, 2.000000
+src_vertices[1]: 811.000000, -1.000000
+src_vertices[2]: 810.000000, 379.000000
+src_vertices[3]: 32.000000, 376.000000
