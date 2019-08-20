@@ -9,6 +9,9 @@ This project is a work in progress.  To use, drop an image on the executable.  O
 To find out more about the project, read our paper at:
 [LEGO as Language for Visual Communication](osf.io/6fwq4)
 
+## Requirements
+This project requires [OpenCV](https://opencv.org) to be built from source. 
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
